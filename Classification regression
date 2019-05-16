@@ -1,0 +1,146 @@
+#############     loading libraries      ###########
+  library(caret)
+  library(C50)
+  library(mlbench)
+  library(ggplot2)
+  library(plotly)
+
+#############   loading databases    #############
+ConsComp<-read.csv('A:/B/Ubiqum/module2/classification/CompleteResponses.csv')
+ConsInComp<-read.csv('A:/B/Ubiqum/module2/classification/SurveyIncomplete.csv')
+
+##########    checking databases     ###########
+summary(ConsComp)
+summary(ConsInComp)
+
+#table(ConsComp$brand)
+#0    1 
+#3744 6154 
+
+#######   preprocess data    #####
+
+#if you make factor from a variable it will act like rown() number of dummies, 
+#will very slow to work with
+
+ConsComp$brand<-as.factor(ConsComp$brand)
+levels(ConsComp$brand)<-c('Acer', 'Sony')
+
+################   model decision tree C5.0    ##################
+set.seed(123)
+rownum<-nrow(ConsComp)
+rownum
+a<-0.2*rownum
+#setting sample
+CCSample<-ConsComp[sample(1:nrow(ConsComp),floor(a),replace=FALSE), ]
+
+#partioning to training and testing sets
+inTraining <- createDataPartition(CCSample$brand, p = .75, list = FALSE)
+training <- CCSample[inTraining, ]
+testing <- CCSample[-inTraining, ]
+fitControl<-trainControl(method="repeatedcv", number=10, repeats = 1)
+
+#decision tree, automatic grid
+Mod1Dt<-train(brand~.,data=training, method="C5.0",trControl=fitControl,tuneLength=2)
+Mod1Dt
+confusionMatrix(Mod1Dt)
+varImp(Mod1Dt)
+
+#############   model random forest ##################
+manGrid<-expand.grid(mtry=c(2,3))
+Mod1Rf<-train(brand~.,data=training, method="rf",trControl=fitControl,tuneGrid=manGrid)
+Mod1Rf
+confusionMatrix(Mod1Rf)
+varImp(Mod1Rf)
+
+########### plotting salary and age as independent variables #############
+
+scatter <- ggplot(ConsComp, aes(x = age, y = salary, col = brand)) + 
+  geom_point()
+
+scatter+scale_fill_manual(values=c("green","grey"))
+ggplotly(scatter)
+
+###############    retraining models with age & salary ###########
+
+#setting new sample
+b<-0.4*rownum
+CCSample2<-ConsComp[sample(1:nrow(ConsComp),floor(b),replace=FALSE), ]
+
+#partioning to training and testing sets
+inTraining2 <- createDataPartition(CCSample2$brand, p = .75, list = FALSE)
+training2 <- CCSample2[inTraining2, ]
+testing2 <- CCSample2[-inTraining2, ]
+fitControl2<-trainControl(method="repeatedcv", number=10, repeats = 1)
+
+#decision tree, automatic grid
+Mod2Dt<-train(brand~ salary+age,data=training2, method="C5.0",trControl=fitControl2,tuneLength=2)
+Mod2Dt
+confusionMatrix(Mod2Dt)
+varImp(Mod2Dt)
+
+#model random forest
+manGrid2<-expand.grid(mtry=c(1,2,3,4,5))
+Mod2Rf<-train(brand~salary+age,data=training2, method="rf",trControl=fitControl2,tuneGrid=manGrid2)
+Mod2Rf
+confusionMatrix(Mod2Rf)
+varImp(Mod2Rf)
+
+###############    comparing models     ###############
+
+#computing test accuracy, decisiont tree
+TestTree<-predict(Mod2Dt,testing2)
+RateTree<-data.frame(TestTree,testing2$brand)
+EqualTree<-c(RateTree[1]==RateTree[2])
+AccurTree<-sum(EqualTree)/length(EqualTree)*100
+AccurTree
+
+#doing the same with a function
+validation.dt <- confusionMatrix(table(TestTree, testing2$brand))
+validation.dt$overall["Accuracy"]
+
+#computing test accuracy, random forest
+TestForest<-predict(Mod2Rf,testing2)
+RateForest<-data.frame(TestForest,testing2$brand)
+EqualForest<-c(RateForest[1]==RateForest[2])
+AccurForest<-sum(EqualForest)/length(EqualForest)*100
+AccurForest
+
+#doing the same with a function
+validation.rf <- confusionMatrix(table(TestForest, testing2$brand))
+validation.rf$overall["Accuracy"]
+
+results<-resamples(list(DecTree=Mod2Dt,RandomF=Mod2Rf))
+summary(results)
+bwplot(results)
+dotplot(results)
+
+############## prediction ################
+PredBrand<-predict(Mod2Rf, ConsInComp)
+table(PredBrand)
+
+###########    plots    #########
+
+ggplot(ConsComp,aes(x=salary,fill=brand))+geom_histogram(bins = 500)
+ggplot(ConsComp,aes(x=age,fill=brand))+geom_histogram(bins = 80)
+
+PredTable<-data.frame(ConsInComp,PredBrand)
+
+scatter <- ggplot(ConsInComp, aes(x = age, y = salary, col = PredBrand)) + 
+  geom_point()
+
+scatter+scale_fill_manual(values=c("green","grey"))
+ggplotly(scatter)
+
+barplot<-ggplot(ConsInComp,aes(x=PredBrand,fill=PredBrand))+geom_bar()             
+barplot+scale_fill_manual(values=c("green","grey"))
+
+ggplot(PredTable,aes(x=salary,fill=PredBrand))+geom_histogram(bins = 500)
+ggplot(PredTable,aes(x=age,fill=PredBrand))+geom_histogram(bins = 80)
+
+###########   summary chart of brand preferences  ################
+
+PredTable$brand<- NULL
+colnames(PredTable)[7]<-"brand"
+PredTable$brand<-as.factor(PredTable$brand)
+totalData<-rbind(ConsComp,PredTable)
+ggplot(totalData,aes(x=brand,fill=brand))+geom_bar()
