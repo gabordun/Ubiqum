@@ -1,0 +1,336 @@
+##########################################################################################
+##                                                                                      ##
+#############   Multiple regression models to predict products sales ####################
+##                                                                                      ##
+##########################################################################################
+
+#############   loading libraries      ###########
+library(caret)
+library(C50)
+library(mlbench)
+library(ggplot2)
+library(plotly)
+library(corrplot)
+library(e1071)
+library(kernlab)
+
+#############   loading datasets    #############
+
+Products<-read.csv('A:/B/Ubiqum/module2/task3/existingproductattributes2017.csv')
+NewProducts<-read.csv('A:/B/Ubiqum/module2/task3/newproductattributes2017.csv')
+
+#############   investigating, preprocessing dataset ####################
+
+sapply(Products, class)
+sapply(NewProducts, class)
+
+#turning to dummies
+NumProducts<-dummyVars("~.", data=Products)
+OkProducts<-data.frame(predict(NumProducts,newdata = Products))
+
+#renaming
+OkProducts = OkProducts %>%
+  rename(
+    Accessories = ProductType.Accessories,
+    Display = ProductType.Display,
+    ExtendedWarr = ProductType.ExtendedWarranty,
+    GameCons = ProductType.GameConsole,
+    Laptop = ProductType.Laptop,
+    NetBook = ProductType.Netbook,
+    PC = ProductType.PC,
+    Printer = ProductType.Printer,
+    PrinterSupp = ProductType.PrinterSupplies,
+    Smartphone = ProductType.Smartphone,
+    Software = ProductType.Software,
+    Tablet = ProductType.Tablet,
+    Number = ProductNum,
+    Price = Price,
+    x5Star = x5StarReviews,
+    x4Star = x4StarReviews,
+    x3Star = x3StarReviews,
+    x2Star = x2StarReviews,
+    x1Star = x1StarReviews,
+    PosReview = PositiveServiceReview,
+    NegReview = NegativeServiceReview,
+    Recommend = Recommendproduct,
+    BestSellersRank=BestSellersRank,
+    Weight = ShippingWeight,
+    Depth = ProductDepth,
+    Width = ProductWidth,
+    Height = ProductHeight,
+    Margin = ProfitMargin,
+    Volume = Volume
+  )
+#checking NA values
+NAcolumns<-colnames(OkProducts)[colSums(is.na(OkProducts)) > 0]
+
+#dropping attributes with NA
+OkProducts$BestSellersRank<-NULL
+
+#############   investigating, preprocessing dataset - correlations ####################
+
+#computing correlations
+CorrOkProducts<-cor(OkProducts)
+
+# matrix of the p-value of the correlation
+p.mat <- cor.mtest(OkProducts)
+
+#plotting correlations
+corrplot(CorrOkProducts, method="color", type="lower", addCoef.col = TRUE,
+         addCoefasPercent = TRUE,
+         tl.srt=45, #p.mat=p.mat,
+         sig.level=0.05, insig="blank", diag=FALSE)
+
+#dropping unnecesarry variables
+OkProductsClear<-OkProducts
+OkProductsClear[,c("Number","x4Star","x3Star","x2Star","x1Star","PosReview",
+                   #"NegReview",
+                   "Recommend","Depth","Width","Margin","Height")]<-list(NULL)
+
+#computing correlations for the reduced dataset
+CorrOkProductsClear<-cor(OkProductsClear)
+
+# matrix of the p-value of the correlation for the reduced dataset
+p.mat <- cor.mtest(OkProductsClear)
+
+#plotting correlations for the reduced dataset
+corrplot(CorrOkProductsClear, method="color", type="lower", addCoef.col = TRUE,
+         addCoefasPercent = TRUE,
+         tl.srt=45, #p.mat=p.mat,
+         sig.level=0.05, insig="blank", diag=FALSE)
+
+#############   modelling, training #######################
+
+set.seed(123)
+
+#partioning to training and testing sets
+inTraining <- createDataPartition(OkProductsClear$Volume, p = 0.9, list = FALSE)
+training <- OkProductsClear[inTraining, ]
+testing <- OkProductsClear[-inTraining, ]
+fitControl<-trainControl(method="repeatedcv", number=10, repeats = 3)
+
+#kNN
+Mod1kNN<-train(Volume~.,data=training, method="knn",trControl=fitControl,tuneLength=2)
+Mod1kNN
+varImp(Mod1kNN)
+
+#SVM, linear kernel
+Mod2SVM<-train(Volume~.,data=training, method="svmLinear",
+               scaled=c(),trControl=fitControl,
+               preProcess = c("center", "scale"),
+               tuneGrid = expand.grid(C = c(1, 5, 10, 20)),
+               tuneLength=2)
+Mod2SVM
+varImp(Mod2SVM)
+
+#Gradient boosted model
+gbmGrid<-expand.grid(interaction.depth = c(4,5), n.trees = (1:6)*25,
+                     shrinkage = c(0.05,0.1,0.15), n.minobsinnode = c(1,2,3,4))
+Mod3GBM<-train(Volume~.,data=training, method="gbm",trControl=fitControl,
+               verbose = FALSE, tuneGrid = gbmGrid)
+Mod3GBM
+
+#Random forest
+rfGrid<-expand.grid(mtry=c(2,5,8,15))
+Mod4Rf<-train(Volume~.,data=training, method="rf",trControl=fitControl, tuneGrid = rfGrid)
+Mod4Rf
+
+#SVM, quadratic kernel
+Mod5SVM <- svm(Volume~ ., data = training, scale = FALSE, kernel = "polynomial",
+               degree=2, cost = 10)
+Mod5SVM
+
+#############   model validations ##################
+TestkNN<-predict(Mod1kNN,testing)
+TestSVM<-predict(Mod2SVM,testing)
+TestGBM<-predict(Mod3GBM,testing)
+TestRF<-predict(Mod4Rf,testing)
+TestSVM2<-predict(Mod5SVM,testing)
+TestMatrix<-data.frame(TestkNN,TestSVM,TestGBM,TestRF,TestSVM2,testing$Volume)
+
+Metrics::rmse(TestMatrix$TestkNN, TestMatrix$testing.Volume)
+Metrics::rmse(TestMatrix$TestSVM, TestMatrix$testing.Volume)
+Metrics::rmse(TestMatrix$TestGBM, TestMatrix$testing.Volume)
+Metrics::rmse(TestMatrix$TestRF, TestMatrix$testing.Volume)
+Metrics::rmse(TestMatrix$TestSVM2, TestMatrix$testing.Volume)
+
+#############   prediction\ preprocessing     ###############
+
+#preparing dataset for prediction
+#turning to dummies
+NumNewProducts<-dummyVars("~.", data=NewProducts)
+OkNewProducts<-data.frame(predict(NumNewProducts,newdata = NewProducts))
+
+#renaming
+OkNewProducts = OkNewProducts %>%
+  rename(
+    Accessories = ProductType.Accessories,
+    Display = ProductType.Display,
+    ExtendedWarr = ProductType.ExtendedWarranty,
+    GameCons = ProductType.GameConsole,
+    Laptop = ProductType.Laptop,
+    NetBook = ProductType.Netbook,
+    PC = ProductType.PC,
+    Printer = ProductType.Printer,
+    PrinterSupp = ProductType.PrinterSupplies,
+    Smartphone = ProductType.Smartphone,
+    Software = ProductType.Software,
+    Tablet = ProductType.Tablet,
+    Number = ProductNum,
+    Price = Price,
+    x5Star = x5StarReviews,
+    x4Star = x4StarReviews,
+    x3Star = x3StarReviews,
+    x2Star = x2StarReviews,
+    x1Star = x1StarReviews,
+    PosReview = PositiveServiceReview,
+    NegReview = NegativeServiceReview,
+    Recommend = Recommendproduct,
+    BestSellersRank=BestSellersRank,
+    Weight = ShippingWeight,
+    Depth = ProductDepth,
+    Width = ProductWidth,
+    Height = ProductHeight,
+    Margin = ProfitMargin,
+    Volume = Volume
+  )
+
+#dropping attributes with NA
+OkNewProducts$BestSellersRank<-NULL
+
+#dropping unnecesarry variables from the predicted dataset
+OkNewProductsClear<-OkNewProducts
+OkNewProductsClear[,c("Number","x4Star","x3Star","x2Star","x1Star","PosReview",
+                   #"NegReview",
+                   "Recommend","Depth","Width","Margin","Height")]<-list(NULL)
+
+#############   predictions #########################
+
+#prediction with kNN
+PredictkNN<-predict(Mod1kNN,OkNewProductsClear)
+PredictkNN<-round(PredictkNN,0)
+
+#prediction with SVM
+PredictSVM<-predict(Mod2SVM,OkNewProductsClear)
+PredictSVM<-round(PredictSVM,0)
+
+#prediction with GBM
+PredictGBM<-predict(Mod3GBM,OkNewProductsClear)
+PredictGBM<-round(PredictGBM,0)
+
+#prediction with RF
+PredictRF<-predict(Mod4Rf,OkNewProductsClear)
+PredictRF<-round(PredictRF,0)
+
+#prediction with polynomial SVM
+PredictSVM2<-predict(Mod5SVM,OkNewProductsClear)
+PredictSVM2<-round(PredictSVM2,0)
+
+#############   exporting and plotting predictions ####################
+#exporting prediction
+Prediction<-data.frame(NewProducts$ProductType,PredictkNN,PredictSVM,PredictGBM, 
+                      PredictRF, PredictSVM2)
+write.csv(Prediction,file='A:/B/Ubiqum/module2/task3/predict.csv')
+
+#number of observations in each producttypes
+
+ggplot(Prediction,aes(x=Prediction$NewProducts.ProductType,
+                      fill=Prediction$NewProducts.ProductType))+geom_bar()
+
+#barchart for predictions
+Type=c(rep("PC1" , 5),
+         rep("PC2" , 5),
+         rep("Lapt1" , 5),
+         rep("Lapt2" , 5),
+         rep("Lapt3" , 5),
+         rep("Netbk4" , 5),
+         rep("Netbk5" , 5),
+         rep("Netbk6" , 5),
+         rep("Netbk7" , 5),
+         rep("Tablt1" , 5),
+         rep("Tablt2" , 5),
+         rep("Smartph1" , 5),
+         rep("Smartph2" , 5),
+         rep("Smartph3" , 5),
+         rep("Smartph4" , 5),
+         rep("GameC1" , 5),
+         rep("Disply" , 5),
+         rep("Access1" , 5),
+         rep("Access2" , 5),
+         rep("Softwr" , 5),
+         rep("Printr" , 5),
+         rep("PrintrSppls" , 5),
+         rep("ExtendedW" , 5),
+         rep("GameC2" , 5))
+Model=rep(c("kNN" , "SVMLinear" , "GBM", "RF", "SVMQuadratic") , 24)
+TPrediction<-(data.frame(t(Prediction)))
+TPrediction<-TPrediction[-c(1),]
+
+bar1<-as.numeric(levels(TPrediction$X1))[TPrediction$X1]
+bar2<-as.numeric(levels(TPrediction$X2))[TPrediction$X2]
+bar3<-as.numeric(levels(TPrediction$X3))[TPrediction$X3]
+bar4<-as.numeric(levels(TPrediction$X4))[TPrediction$X4]
+bar5<-as.numeric(levels(TPrediction$X5))[TPrediction$X5]
+bar6<-as.numeric(levels(TPrediction$X6))[TPrediction$X6]
+bar7<-as.numeric(levels(TPrediction$X7))[TPrediction$X7]
+bar8<-as.numeric(levels(TPrediction$X8))[TPrediction$X8]
+bar9<-as.numeric(levels(TPrediction$X9))[TPrediction$X9]
+bar10<-as.numeric(levels(TPrediction$X10))[TPrediction$X10]
+bar11<-as.numeric(levels(TPrediction$X11))[TPrediction$X11]
+bar12<-as.numeric(levels(TPrediction$X12))[TPrediction$X12]
+bar13<-as.numeric(levels(TPrediction$X13))[TPrediction$X13]
+bar14<-as.numeric(levels(TPrediction$X14))[TPrediction$X14]
+bar15<-as.numeric(levels(TPrediction$X15))[TPrediction$X15]
+bar16<-as.numeric(levels(TPrediction$X16))[TPrediction$X16]
+bar17<-as.numeric(levels(TPrediction$X17))[TPrediction$X17]
+bar18<-as.numeric(levels(TPrediction$X18))[TPrediction$X18]
+bar19<-as.numeric(levels(TPrediction$X19))[TPrediction$X19]
+bar20<-as.numeric(levels(TPrediction$X20))[TPrediction$X20]
+bar21<-as.numeric(levels(TPrediction$X21))[TPrediction$X21]
+bar22<-as.numeric(levels(TPrediction$X22))[TPrediction$X22]
+bar23<-as.numeric(levels(TPrediction$X23))[TPrediction$X23]
+bar24<-as.numeric(levels(TPrediction$X24))[TPrediction$X24]
+
+PredictedValue=c(bar1,bar2,bar3,bar4,bar5,bar6,bar7,bar8,bar9,bar10,bar11,bar12,
+                 bar13,bar14,bar15,bar16,bar17,bar18,bar19,bar20,bar21,bar22,bar23,bar24)
+data=data.frame(Type,Model,PredictedValue)
+
+ggplot(data, aes(fill=Model, y=PredictedValue, x=Type)) + 
+  geom_bar(position="dodge", stat="identity")
+
+#barchart for predictions, aggrated by product types
+Type=c(rep("PC" , 5),
+       rep("PC" , 5),
+       rep("Laptop" , 5),
+       rep("Laptop" , 5),
+       rep("Laptop" , 5),
+       rep("Netbook" , 5),
+       rep("Netbook" , 5),
+       rep("Netbook" , 5),
+       rep("Netbook" , 5),
+       rep("Tablet" , 5),
+       rep("Tablet" , 5),
+       rep("Smartphone" , 5),
+       rep("Smartphone" , 5),
+       rep("Smartphone" , 5),
+       rep("Smartphone" , 5),
+       rep("GameConsole" , 5),
+       rep("Display" , 5),
+       rep("Accessories" , 5),
+       rep("Accessories" , 5),
+       rep("Software" , 5),
+       rep("Printer" , 5),
+       rep("PrinterSupplies" , 5),
+       rep("ExtendedWarranty" , 5),
+       rep("GameConsole" , 5))
+data=data.frame(Type,Model,PredictedValue)
+
+ggplot(data, aes(fill=Model, y=PredictedValue, x=Type)) + 
+  geom_bar(position="dodge", stat="identity")
+
+#individual model predictions
+ggplot(Prediction, aes(x = NewProducts.ProductType, y = PredictkNN)) + geom_point()
+ggplot(Prediction, aes(x = NewProducts.ProductType, y = PredictSVM)) + geom_point()
+ggplot(Prediction, aes(x = NewProducts.ProductType, y = PredictGBM)) + geom_point()
+ggplot(Prediction, aes(x = NewProducts.ProductType, y = PredictRF)) + geom_point()
+ggplot(Prediction, aes(x = NewProducts.ProductType, y = PredictSVM2)) + geom_point()
