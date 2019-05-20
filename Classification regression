@@ -1,3 +1,13 @@
+###########################################################################
+#                                                                         #
+#           Predicting user preference with a classification model        #
+#           Author: Gabor Dunai                                           #
+#           Version: 1.0                                                  #
+#           Date: 15.05.2019                                              #
+#                                                                         #
+###########################################################################
+
+
 #############     loading libraries      ###########
   library(caret)
   library(C50)
