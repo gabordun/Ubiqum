@@ -1,3 +1,13 @@
+###########################################################################
+#                                                                         #
+#           Computing RMSE for a small matrix prediction                  #
+#           Author: Shekhar Biswas, Gabor Dunai                           #
+#           Version: 1.0                                                  #
+#           Date: 16.05.2019                                              #
+#                                                                         #
+###########################################################################
+
+
 #--------------Substitute every question mark with your own code following the instructions---------------#
 
 #Load (or download) the necessary libraries
