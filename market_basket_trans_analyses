@@ -1,0 +1,105 @@
+##########################################################################################
+##                                                                                      ##
+#############   Market basket analyses for discovering association rules  ################
+##              Author: Gabor Dunai                                                     ##
+##              Version: 1.0                                                            ##
+##              Date: 25.05.2019                                                           ##
+##                                                                                      ##
+##########################################################################################
+
+########################## set directory, call libraries ###########################
+
+setwd("A:/B/Ubiqum/module2/associations")
+library(arules)
+library(arulesViz)
+
+########################## import dataset ###########################
+
+Elektro<-read.transactions("A:/B/Ubiqum/module2/associations/ElectronidexTransactions2017.csv",
+                           format=c("basket"),sep=",")
+
+######################### inspect dataset ############################
+
+inspect (Elektro)
+length (Elektro)
+size (Elektro)
+LIST(Elektro)
+itemLabels(Elektro)
+Freqie<-itemFrequency(Elektro, "absolute")
+sort(Freqie, decreasing = TRUE)
+
+######################## visualizing dataset ########################
+
+par(mar=c(1,1,1,1))
+itemFrequencyPlot(Elektro, type = ("absolute"),
+                  topN = 10, lift = FALSE,
+                  population = Elektro, horiz = FALSE)
+itemFrequencyPlot(Elektro, type = ("relative"),
+                  topN = 20, lift = FALSE,
+                  population = Elektro, horiz = FALSE)
+
+####################### discover rules ##############################
+
+Rules<-apriori(Elektro, parameter = list(supp=0.015, conf = 0.15, 
+                                         minlen = 2
+                                         #,maxlen = 2)
+                                          ))
+                                         
+iMacRul<-apriori(Elektro, parameter = list(supp=0.015, conf = 0.15, 
+                                         minlen = 2),
+                                         #,maxlen = 2,
+                                         appearance = list(lhs = "iMac"))
+
+inspect(Rules)
+summary(Rules)
+inspect(iMacRul)
+summary(iMacRul)
+
+#####   sort rules
+
+SortedByLift<-sort(Rules, by = "lift")
+SortedBySupport<-sort(Rules, by = "support")
+SortedByConfidence<-sort(Rules, by = "confidence")
+SortedByLiftShort<-head(SortedByLift,30)
+SortedBySupportShort<-head(SortedBySupport, 30)
+SortedByConfidenceShort<-head(SortedByConfidence,30)
+inspect(SortedByLiftShort)
+inspect(SortedBySupportShort)
+inspect(SortedByConfidenceShort)
+
+####  iMac rules
+
+iMacRules<-subset(Rules, items %in% "iMac")
+SortediMacByLift<-sort(iMacRules, by = "lift")
+iMacSortedByLiftShort<-head(SortediMacByLift,40)
+
+inspect(iMacRules)
+
+#### any redundant rule?
+
+is.redundant(Rules)
+
+###################### visualize rules ##############################
+
+plot(Rules)
+plot(SortedByLiftShort)
+plot(SortedBySupportShort)
+plot(SortedByLiftShort[1:15],method="graph")
+plot(SortedByLiftShort[16:30],method="graph")
+plot(SortediMacByLift[1:10], method= "graph")
+plot(SortediMacByLift[11:20], method= "graph")
+plot(iMacRul, method= "graph", control = list(cex=1.5))
+
+plot(SortedByLiftShort[1:15],method="paracoord")
+plot(SortedByLiftShort[16:30],method="paracoord")
+
+plot(SortedByLiftShort[1:10],method="grouped matrix", control = list(cex.sub=1.5, cex=1.5))
+plot(SortedByLiftShort[11:20],method="grouped matrix", control = list(cex=1.5))
+plot(SortedByLiftShort[21:30],method="grouped matrix", control = list(cex=1.5))
+
+plot(SortediMacByLift[1:10],method="grouped matrix", control = list(cex=1.5))
+plot(SortediMacByLift[11:20],method="grouped matrix", control = list(cex=1.5))
+
+inspectDT(Rules)
+inspectDT(SortedByLiftShort)
+inspectDT(SortediMacByLift)
